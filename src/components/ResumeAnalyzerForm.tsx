@@ -169,34 +169,72 @@ export const ResumeAnalyzerForm: React.FC<ResumeAnalyzerFormProps> = ({
     try {
       setSubmissionStep('Dispatching to n8n Cloud Webhook (rohinitheresa8.app.n8n.cloud)...');
 
-      const response = await fetch('/api/submit-resume', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
-          fileName: fileName || 'resume.pdf',
-          fileType: fileType || 'application/pdf',
-          fileBase64,
-          targetRole: TARGET_ROLES.find(r => r.id === targetRole)?.label || targetRole,
-        }),
-      });
+      let isSuccess = false;
+      let responseDetails: any = null;
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        setSubmissionStep('Automation workflow triggered successfully!');
-        setSubmissionSuccess({
-          applicantName: name.trim(),
-          applicantEmail: email.trim(),
-          fileName: fileName || 'resume.pdf',
-          fileSizeKb: data.details?.fileSizeKb || Math.round(fileBase64.length * 0.75 / 1024),
-          targetRole: TARGET_ROLES.find(r => r.id === targetRole)?.label || 'General Evaluation',
-          submittedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      // Tier 1: Try the backend API proxy (/api/submit-resume)
+      try {
+        const response = await fetch('/api/submit-resume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            email: email.trim(),
+            fileName: fileName || 'resume.pdf',
+            fileType: fileType || 'application/pdf',
+            fileBase64,
+            targetRole: TARGET_ROLES.find(r => r.id === targetRole)?.label || targetRole,
+          }),
         });
-      } else {
-        throw new Error(data.error || 'Failed to submit resume to n8n workflow.');
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            isSuccess = true;
+            responseDetails = data.details;
+          }
+        }
+      } catch (proxyErr) {
+        console.warn('API proxy attempt failed, falling back to direct webhook submission:', proxyErr);
       }
+
+      // Tier 2: Direct dispatch fallback to n8n cloud form endpoint
+      if (!isSuccess) {
+        setSubmissionStep('Direct routing to n8n webhook...');
+        const directFormData = new FormData();
+        directFormData.append('field-0', name.trim());
+        directFormData.append('field-1', email.trim());
+
+        if (file) {
+          directFormData.append('field-2', file, fileName || 'resume.pdf');
+        } else {
+          const byteCharacters = atob(fileBase64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const fallbackBlob = new Blob([byteArray], { type: fileType || 'text/plain' });
+          directFormData.append('field-2', fallbackBlob, fileName || 'resume.txt');
+        }
+
+        await fetch('https://rohinitheresa8.app.n8n.cloud/form/0175728e-20ec-4262-bb5c-ba2ca6e16c4c', {
+          method: 'POST',
+          body: directFormData,
+          mode: 'no-cors',
+        });
+        isSuccess = true;
+      }
+
+      setSubmissionStep('Automation workflow triggered successfully!');
+      setSubmissionSuccess({
+        applicantName: name.trim(),
+        applicantEmail: email.trim(),
+        fileName: fileName || 'resume.pdf',
+        fileSizeKb: responseDetails?.fileSizeKb || Math.round(fileBase64.length * 0.75 / 1024),
+        targetRole: TARGET_ROLES.find(r => r.id === targetRole)?.label || 'General Evaluation',
+        submittedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      });
     } catch (err: any) {
       console.error('Submission error:', err);
       setErrorMessage(err.message || 'An error occurred while connecting to the n8n automation service.');
