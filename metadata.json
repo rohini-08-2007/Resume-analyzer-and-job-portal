@@ -1,0 +1,6 @@
+{
+  "name": "Resume Analyzer | Automated ATS & Career Evaluation",
+  "description": "Intelligent resume analysis, ATS compatibility scoring, and instant workflow automation powered by n8n.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
